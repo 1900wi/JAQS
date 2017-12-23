@@ -10,6 +10,10 @@ If you want to declare your field in props, instead of append it manually, you w
 """
 from __future__ import print_function
 import os
+try:
+    basestring
+except NameError:
+    basestring = str
 
 import numpy as np
 import pandas as pd
@@ -188,7 +192,7 @@ class DataView(object):
              "spe_bal_netcash_inc_undir", "tot_bal_netcash_inc_undir"}
         self.fin_indicator = \
             {"extraordinary","deductedprofit","grossmargin","operateincome","investincome","stmnote_finexp",
-             "stm_is","ebit","ebitda""fcff","fcfe","exinterestdebt_current","exinterestdebt_noncurrent","interestdebt",
+             "stm_is","ebit_daily","ebitda""fcff","fcfe","exinterestdebt_current","exinterestdebt_noncurrent","interestdebt",
              "netdebt","tangibleasset","workingcapital","networkingcapital","investcapital","retainedearnings","eps_basic_daily", # TODO eps_basic
              "eps_diluted","eps_diluted2","bps","ocfps","grps","orps","surpluscapitalps","surplusreserveps","undistributedps",
              "retainedps","cfps","ebitps","fcffps","fcfeps","netprofitmargin","grossprofitmargin","cogstosales",
@@ -609,7 +613,7 @@ class DataView(object):
             if fields_fin_ind:
                 df_fin_ind, msg4 = self.data_api.query_lb_fin_stat('fin_indicator', symbol_str,
                                                                    self.extended_start_date_q, self.end_date,
-                                                                   sep.join(fields_cf), drop_dup_cols=['symbol', self.REPORT_DATE_FIELD_NAME])
+                                                                   sep.join(fields_fin_ind), drop_dup_cols=['symbol', self.REPORT_DATE_FIELD_NAME])
                 if msg4 != '0,':
                     print(msg4)
                 quarterly_list.append(df_fin_ind.loc[:, fields_fin_ind])
@@ -1129,7 +1133,7 @@ class DataView(object):
             whether add successfully.
 
         """
-        if isinstance(field_names, str):
+        if isinstance(field_names, basestring):
             field_names = field_names.split(',')
         elif isinstance(field_names, (list, tuple)):
             pass

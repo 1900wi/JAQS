@@ -4,10 +4,15 @@ from __future__ import print_function
 import os
 import json
 from collections import OrderedDict
+try:
+    basestring
+except NameError:
+    basestring = str
 
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.ticker import Formatter
 
@@ -82,6 +87,10 @@ class BaseAnalyzer(object):
         self._closes = None
         self._closes_adj = None
         self.daily_position = None
+        self.returns = None
+        self.position_change = None
+        self.account = None
+        self.daily = None
         
         self.adjust_mode = None
         
@@ -161,7 +170,7 @@ class BaseAnalyzer(object):
             self.inst_map = data_inst.to_dict(orient='index')
         elif self.data_api is not None:
             inst_mgr = InstManager(data_api=self.data_api, symbol=symbol_str)
-            self.inst_map = {k: v.__dict__ for k, v in inst_mgr.inst_map.items()}
+            self.inst_map = {k: v.__dict__ for k, v in inst_mgr._inst_map.items()}
             del inst_mgr
         else:
             raise ValueError("no dataview or dataapi provided.")
@@ -381,6 +390,11 @@ class BaseAnalyzer(object):
         start = pd.to_datetime(self.configs['start_date'], format="%Y%m%d")
         end = pd.to_datetime(self.configs['end_date'], format="%Y%m%d")
         years = (end - start).days / 365.0
+        
+        active_cum = df_returns['active_cum'].values
+        max_dd_start = np.argmax(np.maximum.accumulate(active_cum) - active_cum)  # end of the period
+        max_dd_end = np.argmax(active_cum[:max_dd_start])  # start of period
+        max_dd = (active_cum[max_dd_end] - active_cum[max_dd_start]) / active_cum[max_dd_start]
     
         self.performance_metrics['Annual Return (%)'] =\
             100 * (np.power(df_returns.loc[:, 'active_cum'].values[-1], 1. / years) - 1)
@@ -390,6 +404,9 @@ class BaseAnalyzer(object):
                                                     / self.performance_metrics['Annual Volatility (%)'])
         
         self.risk_metrics['Beta'] = np.corrcoef(df_returns.loc[:, 'bench'], df_returns.loc[:, 'strat'])[0, 1]
+        self.risk_metrics['Maximum Drawdown (%)'] = max_dd * TO_PCT
+        self.risk_metrics['Maximum Drawdown start'] = df_returns.index[max_dd_start]
+        self.risk_metrics['Maximum Drawdown end'] = df_returns.index[max_dd_end]
     
         # bt_strat_mv = pd.read_csv('bt_strat_mv.csv').set_index('trade_date')
         # df_returns = df_returns.join(bt_strat_mv, how='right')
@@ -403,7 +420,9 @@ class BaseAnalyzer(object):
             save_folder = self.file_folder
         fig1 = plot_portfolio_bench_pnl(self.returns.loc[:, 'strat_cum'],
                                         self.returns.loc[:, 'bench_cum'],
-                                        self.returns.loc[:, 'active_cum'])
+                                        self.returns.loc[:, 'active_cum'],
+                                        self.risk_metrics['Maximum Drawdown start'],
+                                        self.risk_metrics['Maximum Drawdown end'])
         fig1.savefig(os.path.join(save_folder,'pnl_img.png'), facecolor=fig1.get_facecolor(), dpi=fig1.get_dpi())
         
         fig2 = plot_daily_trading_holding_pnl(self.df_pnl['trading_pnl'],
@@ -476,8 +495,6 @@ class BaseAnalyzer(object):
         
         self.report_dic.update(dic)
         
-        self.returns.to_csv(os.path.join(out_folder, 'returns.csv'))
-    
         r = Report(self.report_dic, source_dir=source_dir, template_fn=template_fn, out_folder=out_folder)
         
         r.generate_html()
@@ -701,7 +718,7 @@ class AlphaAnalyzer(BaseAnalyzer):
         -------
 
         """
-        if isinstance(group, str):
+        if isinstance(group, basestring):
             group = self.dataview.get_ts(group, start_date=self.start_date, end_date=self.end_date)
         elif isinstance(group, pd.DataFrame):
             pass
@@ -753,6 +770,9 @@ class AlphaAnalyzer(BaseAnalyzer):
                 raise ValueError("group data is None.")
             self.brinson(group)
     
+        self.daily_position.to_csv(os.path.join(result_dir, 'daily_position.csv'))
+        self.returns.to_csv(os.path.join(result_dir, 'returns.csv'))
+
         print("generate report...")
         self.gen_report(source_dir=STATIC_FOLDER, template_fn='report_template.html',
                         out_folder=result_dir,
@@ -802,7 +822,8 @@ def plot_daily_trading_holding_pnl(trading, holding, total, total_cum):
     return fig
     
     
-def plot_portfolio_bench_pnl(portfolio_cum_ret, benchmark_cum_ret, excess_cum_ret):
+def plot_portfolio_bench_pnl(portfolio_cum_ret, benchmark_cum_ret, excess_cum_ret,
+                             max_dd_start, max_dd_end):
     """
     Parameters
     ----------
@@ -824,6 +845,8 @@ def plot_portfolio_bench_pnl(portfolio_cum_ret, benchmark_cum_ret, excess_cum_re
     ax1.grid(axis='y')
     
     ax2.plot(idx, (excess_cum_ret-1) * TO_PCT, label='Extra Return', color='#C37051')
+    ax2.axvspan(idx_dt.get_loc(max_dd_start), idx_dt.get_loc(max_dd_end), color='lightgreen', alpha=0.5, label='Maximum Drawdown')
+    ax2.legend(loc='upper left')
     ax2.set(title="Excess Return Compared to Benchmark", ylabel=y_label_ret
             #xlabel="Date", 
             )

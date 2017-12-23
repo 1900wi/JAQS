@@ -318,7 +318,7 @@ def price2ret(prices, period=5, axis=None):
     ret : pd.DataFrame or pd.Series
     
     """
-    ret = cum2ret(prices, period=period, axis=axis, compound=True)
+    ret = prices.pct_change(periods=period, axis=axis)
     return ret
 
 
